@@ -123,8 +123,8 @@
             { id: 1, text: "SMAW" }, { id: 1, text: "111" },
             { id: 2, text: "E6013" }, { id: 2, text: "Rutilo" },
             { id: 3, text: "Junta a tope" }, { id: 3, text: "G" },
-            { id: 4, text: "Soldeo Heterogeneo" }, { id: 4, text: "No fundicion\nde piezas" },
-            { id: 5, text: "Junta en angulo" }, { id: 5, text: "F" }
+            { id: 4, text: "Soldeo Heterogéneo" }, { id: 4, text: "No fundición\nde piezas" },
+            { id: 5, text: "Junta en ángulo" }, { id: 5, text: "F" }
         ];
 
         // Esperar a que la escena cargue para construir el tablero
@@ -143,6 +143,64 @@
               btnReiniciar.setAttribute('scale', '1 1 1');
             });
             btnReiniciar.addEventListener('click', () => this.restartGame());
+          }
+
+          // Botón MUTE
+          const btnMute = document.getElementById('btn-mute');
+          if (btnMute) {
+            let isMuted = false;
+            const bgMusic = document.getElementById('bg-music');
+            const textMute = btnMute.querySelector('a-text');
+            
+            btnMute.addEventListener('mouseenter', () => btnMute.setAttribute('scale', '1.1 1.1 1.1'));
+            btnMute.addEventListener('mouseleave', () => btnMute.setAttribute('scale', '1 1 1'));
+            btnMute.addEventListener('click', () => {
+              isMuted = !isMuted;
+              if (bgMusic) bgMusic.muted = isMuted;
+              textMute.setAttribute('value', isMuted ? 'MÚSICA: OFF' : 'MÚSICA: ON');
+              btnMute.setAttribute('material', 'color', isMuted ? '#e74c3c' : '#2ecc71');
+            });
+          }
+
+          // Botón Entorno (VR / MR)
+          const btnEntorno = document.getElementById('btn-entorno');
+          if (btnEntorno) {
+            let isMR = false;
+            const entornoVirtual = document.getElementById('entorno-virtual');
+            const textEntorno = btnEntorno.querySelector('a-text');
+            const sceneEl = this.el.sceneEl;
+
+            const toggleEntorno = (forzarMR) => {
+              if (forzarMR !== undefined) isMR = forzarMR;
+              else isMR = !isMR;
+
+              if (isMR) {
+                // Activar MR (Ocultar entorno)
+                entornoVirtual.setAttribute('visible', 'false');
+                sceneEl.removeAttribute('fog');
+                sceneEl.setAttribute('background', 'transparent: true');
+                textEntorno.setAttribute('value', 'MODO VIRTUAL (VR)');
+                btnEntorno.setAttribute('material', 'color', '#8e44ad');
+              } else {
+                // Volver a VR (Mostrar estrellas y plataforma)
+                entornoVirtual.setAttribute('visible', 'true');
+                sceneEl.setAttribute('fog', 'type: exponential; color: #0a0a1a; density: 0.06');
+                sceneEl.setAttribute('background', 'color: #0a0a1a');
+                textEntorno.setAttribute('value', 'MODO MIXTO (XR)');
+                btnEntorno.setAttribute('material', 'color', '#9b59b6');
+              }
+            };
+
+            btnEntorno.addEventListener('mouseenter', () => btnEntorno.setAttribute('scale', '1.1 1.1 1.1'));
+            btnEntorno.addEventListener('mouseleave', () => btnEntorno.setAttribute('scale', '1 1 1'));
+            btnEntorno.addEventListener('click', () => toggleEntorno());
+
+            // Detectar si el usuario entra usando el botón "AR" nativo de sus gafas
+            sceneEl.addEventListener('enter-vr', function () {
+              if (sceneEl.is('ar-mode')) {
+                toggleEntorno(true); // Fuerza ocultar el fondo
+              }
+            });
           }
         });
 
@@ -346,17 +404,28 @@
   <a-light type="point" position="0 4 0" color="#ffffff" intensity="0.6"></a-light>
   <a-light type="point" position="0 1.5 -1" color="#f1c40f" intensity="0.3"></a-light>
 
-  <a-entity id="estrellas"></a-entity>
-
-  <!-- Plataforma base -->
-  <a-cylinder radius="3" height="0.01" position="0 0 0" color="#1a252f" opacity="0.8" material="shader: flat;"></a-cylinder>
-  <a-ring radius-inner="2.95" radius-outer="3" position="0 0.01 0" rotation="-90 0 0" color="#f1c40f" opacity="0.5"></a-ring>
+  <!-- Agrupamos el entorno virtual para poder ocultarlo en Realidad Mixta (MR) -->
+  <a-entity id="entorno-virtual">
+    <a-entity id="estrellas"></a-entity>
+    <!-- Plataforma base -->
+    <a-cylinder radius="3" height="0.01" position="0 0 0" color="#1a252f" opacity="0.8" material="shader: flat;"></a-cylinder>
+    <a-ring radius-inner="2.95" radius-outer="3" position="0 0.01 0" rotation="-90 0 0" color="#f1c40f" opacity="0.5"></a-ring>
+  </a-entity>
 
   <!-- Panel superior fijo (HUD) -->
   <a-text id="info-text" value="Tiempo: 00:00   |   Intentos: 0" position="0 3.2 -2.8" align="center" color="#f1c40f" scale="1 1 1" font="exo2bold"></a-text>
 
-  <a-entity id="btn-reiniciar" class="interactable" position="0 2.8 -2.8" geometry="primitive: plane; width: 1.1; height: 0.3" material="color: #e67e22; shader: flat; transparent: false; opacity: 0.9" border-radius="0.05">
-    <a-text value="REINICIAR TALLER" align="center" position="0 0 0.01" color="#ffffff" font="exo2bold" scale="0.7 0.7 0.7"></a-text>
+  <!-- Controles interactivos -->
+  <a-entity id="btn-reiniciar" class="interactable" position="-1.2 2.8 -2.8" geometry="primitive: plane; width: 1; height: 0.25" material="color: #e67e22; shader: flat; transparent: false; opacity: 0.9" border-radius="0.05">
+    <a-text value="REINICIAR TALLER" align="center" position="0 0 0.01" color="#ffffff" font="exo2bold" scale="0.6 0.6 0.6"></a-text>
+  </a-entity>
+
+  <a-entity id="btn-entorno" class="interactable" position="0 2.8 -2.8" geometry="primitive: plane; width: 1.1; height: 0.25" material="color: #9b59b6; shader: flat; transparent: false; opacity: 0.9" border-radius="0.05">
+    <a-text value="MODO MIXTO (XR)" align="center" position="0 0 0.01" color="#ffffff" font="exo2bold" scale="0.6 0.6 0.6"></a-text>
+  </a-entity>
+
+  <a-entity id="btn-mute" class="interactable" position="1.2 2.8 -2.8" geometry="primitive: plane; width: 1; height: 0.25" material="color: #2ecc71; shader: flat; transparent: false; opacity: 0.9" border-radius="0.05">
+    <a-text value="MÚSICA: ON" align="center" position="0 0 0.01" color="#ffffff" font="exo2bold" scale="0.6 0.6 0.6"></a-text>
   </a-entity>
 
   <!-- CONTENEDOR DEL TABLERO -->
