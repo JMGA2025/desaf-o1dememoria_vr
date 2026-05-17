@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VR Memory - Semicírculo Espacial</title>
+  
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+  
+  <style>
+    body { 
+        margin: 0; 
+        overflow: hidden; 
+        background: #000; 
+        font-family: 'Montserrat', sans-serif; 
+    }
+    #ui-container {
+      position: absolute; 
+      top: 20px; 
+      left: 50%; 
+      transform: translateX(-50%);
+      color: white; 
+      text-align: center; 
+      z-index: 100; 
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 15px 30px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    h1 { 
+        color: #f1c40f; 
+        margin: 0; 
+        font-size: 1.5rem; 
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+    p { 
+        margin: 5px 0 0 0; 
+        font-size: 1rem; 
+        color: #bdc3c7;
+    }
+  </style>
+
+  <script>
+    AFRAME.registerComponent('memory-card', {
+      schema: {
+        id: { type: 'number' },
+        text: { type: 'string' }
+      },
+      init: function () {
+        this.isFlipped = false;
+        this.isMatched = false;
+        this.el.classList.add('interactable');
+
+        // Efecto Hover (iluminar borde)
+        this.el.addEventListener('mouseenter', () => {
+          if (!this.isFlipped && !this.isMatched) {
+            this.el.setAttribute('material', 'color', '#4a6984');
+            // Crece un poco al apuntar
+            this.el.setAttribute('animation__escala', 'property: scale; to: 1.1 1.1 1.1; dur: 200; easing: easeOutQuad');
+          }
+        });
+        
+        this.el.addEventListener('mouseleave', () => {
+          if (!this.isFlipped && !this.isMatched) {
+            this.el.setAttribute('material', 'color', '#34495e');
+            this.el.setAttribute('animation__escala', 'property: scale; to: 1 1 1; dur: 200; easing: easeOutQuad');
+          }
+        });
+
+        // Click para voltear
+        this.el.addEventListener('click', () => {
+          this.el.sceneEl.systems['memory-game'].cardClicked(this.el, this.data.id);
+        });
+      },
+      
+      flip: function () {
+        this.isFlipped = true;
+        this.el.setAttribute('animation__rot', 'property: rotation; to: 0 180 0; dur: 500; easing: easeOutBack');
+      },
+
+      unflip: function () {
+        // Animación de error (Rojo)
+        this.el.setAttribute('material', 'color', '#e74c3c'); 
+        setTimeout(() => {
+          this.el.setAttribute('animation__rot', 'property: rotation; to: 0 0 0; dur: 500; easing: easeInOutQuad');
+          this.el.setAttribute('material', 'color', '#34495e'); 
+          
+          setTimeout(() => {
+            this.isFlipped = false;
+          }, 500); // Espera a que rote para dejarla lista
+        }, 1000); // Tiempo que se queda en rojo mostrando el error
+      },
+
+      setMatched: function () {
+        this.isMatched = true;
+        this.el.classList.remove('interactable'); 
+        this.el.setAttribute('material', 'color', '#27ae60'); 
+        this.el.setAttribute('animation__escala', 'property: scale; to: 1 1 1; dur: 200; easing: easeOutQuad');
+      }
+    });
+
+    AFRAME.registerSystem('memory-game', {
+      init: function () {
+        this.firstCard = null;
+        this.secondCard = null;
+        this.lockBoard = false;
+        this.attempts = 0;
+        this.matchesFound = 0;
+        this.secondsElapsed = 0;
+        this.timerInterval = null;
+        this.gameActive = true;
+
+        this.infoText = document.getElementById('info-text');
+        this.victoryText = document.getElementById('victory-text');
+        this.boardEl = document.getElementById('board');
+
+        // Parejas de soldadura
+        this.data = [
+            { id: 1, text: "SMAW" }, { id: 1, text: "111" },
+            { id: 2, text: "E6013" }, { id: 2, text: "Rutilo" },
+            { id: 3, text: "Junta a tope" }, { id: 3, text: "G" },
+            { id: 4, text: "Soldeo Heterogeneo" }, { id: 4, text: "No fundicion\nde piezas" },
+            { id: 5, text: "Junta en angulo" }, { id: 5, text: "F" }
+        ];
+
+        // Esperar a que la escena cargue para construir el tablero
+        this.el.sceneEl.addEventListener('loaded', () => {
+          this.createBoard();
+          
+          // Configurar botón de reinicio interactivo
+          const btnReiniciar = document.getElementById('btn-reiniciar');
+          if (btnReiniciar) {
+            btnReiniciar.addEventListener('mouseenter', () => {
+              btnReiniciar.setAttribute('material', 'color', '#d35400'); // Naranja oscuro
+              btnReiniciar.setAttribute('scale', '1.1 1.1 1.1');
+            });
+            btnReiniciar.addEventListener('mouseleave', () => {
+              btnReiniciar.setAttribute('material', 'color', '#e67e22'); // Naranja original
+              btnReiniciar.setAttribute('scale', '1 1 1');
+            });
+            btnReiniciar.addEventListener('click', () => this.restartGame());
+          }
+        });
+
+        this.startTimer();
+      },
+
+      createBoard: function() {
+        this.boardEl.innerHTML = ''; // Limpia el tablero viejo
+        this.data.sort(() => 0.5 - Math.random()); // Baraja las cartas aleatoriamente
+
+        // Configuración de la disposición en arco
+        const radius = 2.8; 
+        const angles = [-75, -37.5, 0, 37.5, 75]; 
+        const heights = [1.2, 2.2]; 
+
+        this.data.forEach((item, index) => {
+          const row = Math.floor(index / 5);
+          const col = index % 5;
+          const angleDeg = angles[col];
+          const angleRad = angleDeg * Math.PI / 180;
+          
+          const xPos = radius * Math.sin(angleRad);
+          const zPos = -radius * Math.cos(angleRad);
+          const yPos = heights[row];
+
+          const wrapperEl = document.createElement('a-entity');
+          wrapperEl.setAttribute('position', `${xPos} ${yPos} ${zPos}`);
+          wrapperEl.setAttribute('rotation', `0 ${-angleDeg} 0`); 
+          
+          const animDelay = Math.random() * 2000;
+          const animDur = 3000 + Math.random() * 2000;
+          wrapperEl.setAttribute('animation__float', `property: position; to: ${xPos} ${yPos + 0.15} ${zPos}; dir: alternate; loop: true; dur: ${animDur}; delay: ${animDelay}; easing: easeInOutSine`);
+
+          const cardEntity = document.createElement('a-entity');
+          cardEntity.setAttribute('memory-card', `id: ${item.id}; text: ${item.text}`);
+          cardEntity.setAttribute('geometry', 'primitive: box; width: 0.6; height: 0.6; depth: 0.02');
+          cardEntity.setAttribute('material', 'color: #34495e');
+
+          const frontText = document.createElement('a-text');
+          frontText.setAttribute('value', '?');
+          frontText.setAttribute('align', 'center');
+          frontText.setAttribute('position', '0 0 0.015'); 
+          frontText.setAttribute('color', '#f1c40f');
+          frontText.setAttribute('scale', '2 2 2');
+          frontText.setAttribute('font', 'exo2bold');
+          cardEntity.appendChild(frontText);
+
+          const backText = document.createElement('a-text');
+          let formattedText = item.text.replace(/ /g, '\n'); 
+          backText.setAttribute('value', formattedText);
+          backText.setAttribute('align', 'center');
+          backText.setAttribute('position', '0 0 -0.015'); 
+          backText.setAttribute('rotation', '0 180 0');
+          backText.setAttribute('color', '#ffffff');
+          backText.setAttribute('scale', '0.45 0.45 0.45');
+          backText.setAttribute('line-height', '50');
+          cardEntity.appendChild(backText);
+
+          wrapperEl.appendChild(cardEntity);
+          this.boardEl.appendChild(wrapperEl);
+        });
+      },
+
+      restartGame: function() {
+        // Detiene tiempo y resetea variables
+        clearInterval(this.timerInterval);
+        this.firstCard = null;
+        this.secondCard = null;
+        this.lockBoard = false;
+        this.attempts = 0;
+        this.matchesFound = 0;
+        this.secondsElapsed = 0;
+        this.gameActive = true;
+        
+        // Oculta cartel de victoria
+        this.victoryText.setAttribute('visible', 'false');
+        this.victoryText.setAttribute('scale', '0.001 0.001 0.001');
+        
+        // Actualiza HUD, recrea tablero barajado y arranca tiempo
+        this.updateInfoText();
+        this.createBoard();
+        this.startTimer();
+      },
+
+      updateInfoText: function() {
+        const minutes = Math.floor(this.secondsElapsed / 60).toString().padStart(2, '0');
+        const seconds = (this.secondsElapsed % 60).toString().padStart(2, '0');
+        this.infoText.setAttribute('value', `Tiempo: ${minutes}:${seconds}   |   Intentos: ${this.attempts}`);
+      },
+
+      startTimer: function () {
+        this.timerInterval = setInterval(() => {
+          if (this.gameActive) {
+            this.secondsElapsed++;
+            this.updateInfoText();
+          }
+        }, 1000);
+      },
+
+      cardClicked: function (cardEl, id) {
+        if (this.lockBoard) return;
+        const cardComponent = cardEl.components['memory-card'];
+        if (cardComponent.isFlipped || cardComponent.isMatched) return;
+
+        // Volteamos visualmente la carta
+        cardComponent.flip();
+
+        if (!this.firstCard) {
+          this.firstCard = { el: cardEl, id: id };
+          return;
+        }
+
+        this.secondCard = { el: cardEl, id: id };
+        this.checkMatch();
+      },
+
+      checkMatch: function () {
+        this.attempts++;
+        this.updateInfoText();
+        this.lockBoard = true; // Bloquea clics
+
+        const isMatch = this.firstCard.id === this.secondCard.id;
+
+        if (isMatch) {
+          // ACIERTO
+          setTimeout(() => {
+            this.firstCard.el.components['memory-card'].setMatched();
+            this.secondCard.el.components['memory-card'].setMatched();
+            this.matchesFound++;
+            this.resetBoard();
+            
+            if (this.matchesFound === 5) {
+              this.gameWon();
+            }
+          }, 600); // Pequeña pausa para verla girar
+          
+        } else {
+          // FALLO
+          this.firstCard.el.components['memory-card'].unflip();
+          this.secondCard.el.components['memory-card'].unflip();
+          
+          // Desbloqueo tras tiempo en rojo (1000ms) + tiempo de rotación (500ms)
+          setTimeout(() => { 
+            this.resetBoard(); 
+          }, 1550); 
+        }
+      },
+
+      resetBoard: function () {
+        this.firstCard = null;
+        this.secondCard = null;
+        this.lockBoard = false;
+      },
+
+      gameWon: function () {
+        this.gameActive = false;
+        clearInterval(this.timerInterval);
+        
+        const min = Math.floor(this.secondsElapsed / 60).toString().padStart(2, '0');
+        const sec = (this.secondsElapsed % 60).toString().padStart(2, '0');
+        
+        this.victoryText.setAttribute('visible', 'true');
+        this.victoryText.setAttribute('value', `¡EXCELENTE!\n\nPanel completado\nTiempo: ${min}:${sec}\nIntentos: ${this.attempts}`);
+        
+        this.victoryText.setAttribute('animation__scale', 'property: scale; from: 0 0 0; to: 1 1 1; dur: 1500; easing: easeOutElastic');
+      }
+    });
+
+    function crearEstrellas() {
+      const c = document.getElementById('estrellas');
+      for (let i = 0; i < 200; i++) {
+        const s = document.createElement('a-sphere');
+        const r = 15 + Math.random() * 10;
+        const t = Math.random() * Math.PI * 2;
+        const p = Math.random() * Math.PI;
+        s.setAttribute('position', { x: r * Math.sin(p) * Math.cos(t), y: r * Math.cos(p), z: r * Math.sin(p) * Math.sin(t) });
+        s.setAttribute('radius', 0.01 + Math.random() * 0.03);
+        const b = Math.floor(100 + Math.random() * 100);
+        s.setAttribute('material', `color:rgb(${b},${b},${b});emissive:rgb(${b},${b},${b});shader:flat`);
+        c.appendChild(s);
+      }
+    }
+  </script>
+</head>
+<body>
+
+<div id="ui-container">
+  <h1>Desafío VR: SMAW-111</h1>
+  <p>Apunta y usa el clic/gatillo para encontrar las parejas</p>
+</div>
+
+<a-scene renderer="alpha:false;antialias:true;" background="color:#0a0a1a" fog="type: exponential; color: #0a0a1a; density: 0.06" webxr="optionalFeatures: hit-test,local-floor,passthrough;">
+  
+  <a-assets>
+    <audio id="bg-music" src="ATECA1.mp3" preload="auto" loop></audio>
+  </a-assets>
+
+  <a-sound src="#bg-music" autoplay="true" loop="true" volume="0.3"></a-sound>
+
+  <a-light type="ambient" color="#222233"></a-light>
+  <a-light type="point" position="0 4 0" color="#ffffff" intensity="0.6"></a-light>
+  <a-light type="point" position="0 1.5 -1" color="#f1c40f" intensity="0.3"></a-light>
+
+  <a-entity id="estrellas"></a-entity>
+
+  <!-- Plataforma base -->
+  <a-cylinder radius="3" height="0.01" position="0 0 0" color="#1a252f" opacity="0.8" material="shader: flat;"></a-cylinder>
+  <a-ring radius-inner="2.95" radius-outer="3" position="0 0.01 0" rotation="-90 0 0" color="#f1c40f" opacity="0.5"></a-ring>
+
+  <!-- Panel superior fijo (HUD) -->
+  <a-text id="info-text" value="Tiempo: 00:00   |   Intentos: 0" position="0 3.2 -2.8" align="center" color="#f1c40f" scale="1 1 1" font="exo2bold"></a-text>
+
+  <a-entity id="btn-reiniciar" class="interactable" position="0 2.8 -2.8" geometry="primitive: plane; width: 1.1; height: 0.3" material="color: #e67e22; shader: flat; transparent: false; opacity: 0.9" border-radius="0.05">
+    <a-text value="REINICIAR TALLER" align="center" position="0 0 0.01" color="#ffffff" font="exo2bold" scale="0.7 0.7 0.7"></a-text>
+  </a-entity>
+
+  <!-- CONTENEDOR DEL TABLERO -->
+  <a-entity id="board" position="0 0 0"></a-entity>
+
+  <!-- Mensaje de Victoria -->
+  <a-text id="victory-text" visible="false" position="0 2 -2" align="center" color="#2ecc71" scale="0.001 0.001 0.001" font="exo2bold" material="shader: flat;"></a-text>
+
+  <!-- Cámara y mandos VR -->
+  <a-entity id="rig">
+    <a-camera position="0 1.6 0" look-controls="pointerLockEnabled: false" wasd-controls>
+      <!-- El cursor permite jugar con el ratón en navegador tradicional -->
+      <a-entity cursor="rayOrigin: mouse" raycaster="objects: .interactable"></a-entity>
+    </a-camera>
+    
+    <a-entity laser-controls="hand:left" raycaster="objects: .interactable; far: 10" line="color: #f1c40f"></a-entity>
+    <a-entity laser-controls="hand:right" raycaster="objects: .interactable; far: 10" line="color: #f1c40f"></a-entity>
+  </a-entity>
+
+</a-scene>
+
+<script>
+  document.querySelector('a-scene').addEventListener('loaded', crearEstrellas);
+
+  document.body.addEventListener('click', function() {
+    const bgMusic = document.getElementById('bg-music');
+    if (bgMusic && bgMusic.paused) {
+      bgMusic.play().catch(e => console.log('El navegador bloqueó el autoplay:', e));
+    }
+  }, { once: true });
+</script>
+
+</body>
+</html>
